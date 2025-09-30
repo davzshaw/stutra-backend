@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sqlite3
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -16,33 +17,62 @@ def get_connection():
     return conn
 
 
+# ================================
 # HELPER: Manejo de errores
+# ================================
 def db_operation(query_func):
     try:
         return query_func()
     except sqlite3.IntegrityError as err:
         message = str(err)
-        
-        # CHATGPT
         if "UNIQUE constraint failed" in message:
-            status = 409 
+            status = 409
         elif "FOREIGN KEY constraint failed" in message:
             status = 400
         elif "NOT NULL constraint failed" in message:
             status = 400
         else:
             status = 500
-
-        return (
-            jsonify({"status": "error", "sqlite_error": message}),
-            status,
-        )
-
+        return jsonify({"status": "error", "sqlite_error": message}), status
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# ================================
+# VALIDADORES
+# ================================
+def validate_student(data):
+    required = ["id", "name", "lastname", "birthday"]
+    for field in required:
+        if field not in data or not str(data[field]).strip():
+            return f"Missing or empty field: {field}"
+
+    # Validar fecha YYYY-MM-DD
+    try:
+        datetime.strptime(data["birthday"], "%Y-%m-%d")
+    except ValueError:
+        return "Invalid date format (expected YYYY-MM-DD)"
+
+    return None
+
+
+def validate_course(data):
+    required = ["name", "credits"]
+    for field in required:
+        if field not in data or not str(data[field]).strip():
+            return f"Missing or empty field: {field}"
+
+    try:
+        int(data["credits"])
+    except (ValueError, TypeError):
+        return "Credits must be an integer"
+
+    return None
+
+
+# ================================
 # CRUD STUDENTS
+# ================================
 @app.route("/students", methods=["GET"])
 def get_students():
     return db_operation(lambda: _get_students())
@@ -79,7 +109,14 @@ def add_student():
 
 
 def _add_student():
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Invalid JSON"}), 400
     data = request.json
+
+    error = validate_student(data)
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -95,23 +132,21 @@ def _add_student():
             "Castro", "Moreno", "Ruiz", "Ortiz", "Jiménez"
         ]
 
-        # Generar 15 estudiantes automáticamente [BY CHATGPT]
         for i in range(15):
-            new_id = f"{data['id']}{i}" 
+            new_id = f"{data['id']}{i}"
             cursor.execute(
                 "INSERT INTO student (id, name, lastname, birthday) VALUES (?, ?, ?, ?)",
                 (
                     new_id,
                     nombres[i],
-                    f"{apellidos[i]} Dummy",  # Apellido + Dummy fijo
-                    f"200{i:02d}-01-01"       # Fechas ficticias
+                    f"{apellidos[i]} Dummy",
+                    f"200{i:02d}-01-01",
                 ),
             )
         conn.commit()
         conn.close()
         return jsonify({"status": "bulk_created", "count": 15}), 201
 
-    # Caso normal: insertar un solo estudiante
     cursor.execute(
         "INSERT INTO student (id, name, lastname, birthday) VALUES (?, ?, ?, ?)",
         (data["id"], data["name"], data["lastname"], data["birthday"]),
@@ -121,14 +156,20 @@ def _add_student():
     return jsonify({"status": "created"}), 201
 
 
-
 @app.route("/students/<string:id>", methods=["PUT"])
 def update_student(id):
     return db_operation(lambda: _update_student(id))
 
 
 def _update_student(id):
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Invalid JSON"}), 400
     data = request.json
+
+    error = validate_student(data)
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -149,7 +190,7 @@ def _delete_student(id):
     conn = get_connection()
     cursor = conn.cursor()
 
-    if str(id) != "666": 
+    if str(id) != "666":
         cursor.execute("DELETE FROM student WHERE id = ?", (id,))
     else:
         cursor.execute("DELETE FROM student_course")
@@ -160,7 +201,9 @@ def _delete_student(id):
     return jsonify({"status": "deleted"})
 
 
+# ================================
 # CRUD COURSES
+# ================================
 @app.route("/courses", methods=["GET"])
 def get_courses():
     return db_operation(lambda: _get_courses())
@@ -181,12 +224,19 @@ def add_course():
 
 
 def _add_course():
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Invalid JSON"}), 400
     data = request.json
+
+    error = validate_course(data)
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO course (name, credits) VALUES (?, ?)",
-        (data["name"], data["credits"]),
+        (data["name"], int(data["credits"])),
     )
     conn.commit()
     conn.close()
@@ -199,12 +249,19 @@ def update_course(id):
 
 
 def _update_course(id):
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Invalid JSON"}), 400
     data = request.json
+
+    error = validate_course(data)
+    if error:
+        return jsonify({"status": "error", "message": error}), 400
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         "UPDATE course SET name=?, credits=? WHERE id=?",
-        (data["name"], data["credits"], id),
+        (data["name"], int(data["credits"]), id),
     )
     conn.commit()
     conn.close()
@@ -225,7 +282,9 @@ def _delete_course(id):
     return jsonify({"status": "deleted"})
 
 
+# ================================
 # STUDENT-COURSE
+# ================================
 @app.route("/student_courses", methods=["GET"])
 def get_student_courses():
     return db_operation(lambda: _get_student_courses())
@@ -250,7 +309,6 @@ def _get_student_courses():
     result = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(result)
-
 
 
 @app.route("/student_courses", methods=["POST"])
