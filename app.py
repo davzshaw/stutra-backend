@@ -82,6 +82,36 @@ def _add_student():
     data = request.json
     conn = get_connection()
     cursor = conn.cursor()
+
+    if data["id"] == "11223344":
+        nombres = [
+            "Juan", "María", "Pedro", "Ana", "Luis",
+            "Sofía", "Carlos", "Valentina", "Andrés", "Camila",
+            "Jorge", "Paula", "Mateo", "Isabella", "Daniel"
+        ]
+        apellidos = [
+            "García", "Martínez", "Rodríguez", "López", "Hernández",
+            "Gómez", "Díaz", "Pérez", "Ramírez", "Torres",
+            "Castro", "Moreno", "Ruiz", "Ortiz", "Jiménez"
+        ]
+
+        # Generar 15 estudiantes automáticamente [BY CHATGPT]
+        for i in range(15):
+            new_id = f"{data['id']}{i}" 
+            cursor.execute(
+                "INSERT INTO student (id, name, lastname, birthday) VALUES (?, ?, ?, ?)",
+                (
+                    new_id,
+                    nombres[i],
+                    f"{apellidos[i]} Dummy",  # Apellido + Dummy fijo
+                    f"200{i:02d}-01-01"       # Fechas ficticias
+                ),
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "bulk_created", "count": 15}), 201
+
+    # Caso normal: insertar un solo estudiante
     cursor.execute(
         "INSERT INTO student (id, name, lastname, birthday) VALUES (?, ?, ?, ?)",
         (data["id"], data["name"], data["lastname"], data["birthday"]),
@@ -89,6 +119,7 @@ def _add_student():
     conn.commit()
     conn.close()
     return jsonify({"status": "created"}), 201
+
 
 
 @app.route("/students/<string:id>", methods=["PUT"])
